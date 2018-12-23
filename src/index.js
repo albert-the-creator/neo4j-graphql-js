@@ -108,8 +108,12 @@ export function cypherQuery(
   let query;
 
   //TODO: wrap in try catch
-  const queryTypeCypherDirective = resolveInfo.schema
-    .getQueryType()
+  //Adds support for subscriptions
+  const operationType =
+    resolveInfo.operation.operation === 'subscription'
+      ? resolveInfo.schema.getSubscriptionType()
+      : resolveInfo.schema.getQueryType();
+  const operationTypeCypherDirective = operationType
     .getFields()
     [resolveInfo.fieldName].astNode.directives.find(x => {
       return x.name.value === 'cypher';
@@ -124,9 +128,9 @@ export function cypherQuery(
     paramIndex: 1
   });
 
-  if (queryTypeCypherDirective) {
-    // QueryType with a @cypher directive
-    const cypherQueryArg = queryTypeCypherDirective.arguments.find(x => {
+  if (operationTypeCypherDirective) {
+    // QueryType or SubscriptionType with a @cypher directive
+    const cypherQueryArg = operationTypeCypherDirective.arguments.find(x => {
       return x.name.value === 'statement';
     });
 
@@ -135,7 +139,7 @@ export function cypherQuery(
     }", ${argString}, True) AS x UNWIND x AS ${variableName}
     RETURN ${variableName} {${subQuery}} AS ${variableName}${orderByValue} ${outerSkipLimit}`;
   } else {
-    // No @cypher directive on QueryType
+    // No @cypher directive on QueryType or SubscriptionType
 
     // FIXME: support IN for multiple values -> WHERE
     const idWherePredicate =
@@ -151,7 +155,6 @@ export function cypherQuery(
     query =
       `MATCH (${variableName}:${typeName} ${argString}) ${predicate}` +
       `RETURN ${variableName} {${subQuery}} AS ${variableName}${orderByValue} ${outerSkipLimit}`;
-
   }
 
   return [query, { ...nonNullParams, ...subParams }];
@@ -247,7 +250,7 @@ export function cypherMutation(
       resolveInfo.fieldName
     ].astNode.arguments;
 
-    const firstIdArg = args.find(e => getFieldValueType(e) === "ID");
+    const firstIdArg = args.find(e => getFieldValueType(e) === 'ID');
     if (firstIdArg) {
       const firstIdArgFieldName = firstIdArg.name.value;
       if (params.params[firstIdArgFieldName] === undefined) {
@@ -332,7 +335,7 @@ export function cypherMutation(
       paramIndex: 1,
       rootVariableNames: {
         from: `${fromVar}`,
-        to: `${toVar}`,
+        to: `${toVar}`
       },
       variableName: schemaType.name === fromType ? `${toVar}` : `${fromVar}`
     });
@@ -460,7 +463,7 @@ RETURN ${variableName}`;
         from: `_${fromVar}`,
         to: `_${toVar}`
       },
-      variableName: schemaType.name === fromType ? `_${toVar}` : `_${fromVar}`,
+      variableName: schemaType.name === fromType ? `_${toVar}` : `_${fromVar}`
     });
     params = { ...params, ...subParams };
 
@@ -527,9 +530,9 @@ export const makeAugmentedSchema = ({
   });
 };
 
-export const augmentTypeDefs = (typeDefs) => {
+export const augmentTypeDefs = typeDefs => {
   const typeMap = extractTypeMapFromTypeDefs(typeDefs);
   // overwrites any provided declarations of system directives
   const augmented = addDirectiveDeclarations(typeMap);
   return printTypeMap(augmented);
-}
+};
